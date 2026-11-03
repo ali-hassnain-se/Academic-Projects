@@ -18,3 +18,17 @@ def test_case_is_ignored():
 def test_other_apps():
     assert classify_app("notepad.exe") == "other"
     assert classify_app("") == "other"
+
+from assistant.system import capture
+
+
+def test_get_active_app_vscode(monkeypatch):
+    monkeypatch.setattr(capture, "_active_process_name", lambda: "Code.exe")
+    assert capture.get_active_app() == "vscode"
+
+
+def test_get_active_app_never_raises(monkeypatch):
+    def boom():
+        raise RuntimeError("no window")
+    monkeypatch.setattr(capture, "_active_process_name", boom)
+    assert capture.get_active_app() == "other"
