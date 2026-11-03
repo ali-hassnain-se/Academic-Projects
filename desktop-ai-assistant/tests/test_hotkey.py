@@ -11,3 +11,9 @@ def test_three_keys():
 
 def test_spaces_and_case():
     assert to_pynput_combo(" Ctrl + Space ") == "<ctrl>+<space>"
+
+from assistant.system.hotkey import stop_hotkey
+
+
+def test_stop_hotkey_without_register():
+    stop_hotkey()   # must not raise
