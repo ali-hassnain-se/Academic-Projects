@@ -1,10 +1,12 @@
-
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QMenu,
     QSystemTrayIcon,
     QStyle
 )
+
+from assistant.paths import resource_path
 
 
 class SystemTray:
@@ -14,9 +16,12 @@ class SystemTray:
         self.chat = chat
         self.settings = settings
 
-        icon = QApplication.style().standardIcon(
-            QStyle.StandardPixmap.SP_ComputerIcon
-        )
+        icon = QIcon(resource_path("assets/icon.ico"))
+
+        if icon.isNull():
+            icon = QApplication.style().standardIcon(
+                QStyle.StandardPixmap.SP_ComputerIcon
+            )
 
         self.tray = QSystemTrayIcon(icon)
         self.tray.setToolTip("AI Assistant")

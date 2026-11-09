@@ -1,16 +1,38 @@
-
 import json
-import os
-from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel,
     QPushButton, QComboBox, QCheckBox,
     QLineEdit, QGroupBox
 )
 
-from assistant.startup import enable_startup, disable_startup
-from assistant.ai_engine import configure_ai
+from assistant import config
+from assistant.paths import settings_file
+from assistant.storage.settings import get_api_key, save_api_key
+from assistant.system.autostart import (
+    disable_autostart,
+    enable_autostart,
+    is_autostart_enabled,
+)
+
+HOTKEYS = [
+    "Ctrl + Space",
+    "Ctrl + Shift + Space",
+    "Ctrl + Alt + A",
+]
+
+MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+]
+
+
+def _default_hotkey_text():
+    """'ctrl+space' (config) -> 'Ctrl + Space' (shown in the list)."""
+    parts = [p.capitalize() for p in config.DEFAULT_HOTKEY.split("+")]
+    text = " + ".join(parts)
+    return text if text in HOTKEYS else HOTKEYS[0]
 
 
 class SettingsWindow(QWidget):
@@ -22,11 +44,10 @@ class SettingsWindow(QWidget):
         self.hotkey_manager = hotkey_manager
 
         self.setWindowTitle("AI Assistant - Settings")
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self.resize(420, 580)
 
-        self.settings_file = (
-            Path(__file__).resolve().parents[2] / "settings.json"
-        )
+        self.settings_file = settings_file()
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -58,18 +79,11 @@ class SettingsWindow(QWidget):
         self.api_key.setEchoMode(
             QLineEdit.EchoMode.Password
         )
-        self.api_key.setPlaceholderText(
-            "Enter your Gemini API key"
-        )
-
         ai_layout.addWidget(self.api_key)
         ai_layout.addWidget(QLabel("Gemini Model"))
 
         self.model = QComboBox()
-        self.model.addItems([
-            "gemini-3.8-flash",
-            "gemini-2.5-flash"
-        ])
+        self.model.addItems(MODELS)
 
         ai_layout.addWidget(self.model)
         layout.addWidget(ai_group)
@@ -84,10 +98,7 @@ class SettingsWindow(QWidget):
         general_layout.addWidget(QLabel("Keyboard Shortcut"))
 
         self.hotkey_combo = QComboBox()
-        self.hotkey_combo.addItems([
-            "Ctrl + Shift + Space",
-            "Ctrl + Alt + A"
-        ])
+        self.hotkey_combo.addItems(HOTKEYS)
 
         general_layout.addWidget(self.hotkey_combo)
         layout.addWidget(general)
@@ -99,11 +110,24 @@ class SettingsWindow(QWidget):
         layout.addWidget(save_button)
 
         self.status = QLabel("")
+        self.status.setWordWrap(True)
         layout.addWidget(self.status)
 
         layout.addStretch()
 
         self.load_settings()
+
+    def _refresh_key_placeholder(self):
+        try:
+            has_key = bool(get_api_key())
+        except Exception:
+            has_key = False
+
+        self.api_key.clear()
+        self.api_key.setPlaceholderText(
+            "A key is saved. Type a new one to replace it."
+            if has_key else "Enter your Gemini API key"
+        )
 
     def load_settings(self):
 
@@ -122,24 +146,20 @@ class SettingsWindow(QWidget):
                 data.get("theme", "Dark")
             )
 
-            self.startup.setChecked(
-                data.get("startup", False)
-            )
+            try:
+                self.startup.setChecked(is_autostart_enabled())
+            except Exception:
+                self.startup.setChecked(data.get("startup", False))
 
             self.hotkey_combo.setCurrentText(
-                data.get(
-                    "hotkey",
-                    "Ctrl + Shift + Space"
-                )
+                data.get("hotkey", _default_hotkey_text())
             )
 
             self.model.setCurrentText(
-                data.get("model", "gemini-3.8-flash")
+                data.get("model", config.DEFAULT_MODEL)
             )
 
-            self.api_key.setText(
-                os.getenv("GEMINI_API_KEY", "")
-            )
+            self._refresh_key_placeholder()
 
             self.chat.apply_theme(self.theme.currentText())
 
@@ -159,10 +179,12 @@ class SettingsWindow(QWidget):
         }
 
         try:
-            configure_ai(
-                api_key=api_key,
-                model=data["model"]
-            )
+            # API key goes to Windows Credential Manager (never to the JSON file)
+            if api_key:
+                save_api_key(api_key)
+
+            # Used by the AI client if it reads the model from config at call time
+            config.DEFAULT_MODEL = data["model"]
 
             if self.hotkey_manager:
                 shortcut = (
@@ -177,10 +199,16 @@ class SettingsWindow(QWidget):
                     )
                     return
 
-            if data["startup"]:
-                enable_startup()
-            else:
-                disable_startup()
+            try:
+                if data["startup"]:
+                    enable_autostart()
+                else:
+                    disable_autostart()
+            except OSError as error:
+                print("Auto-start error:", error)
+                self.status.setText(
+                    "Saved, but could not change 'Start with Windows'."
+                )
 
             with open(
                 self.settings_file,
@@ -190,10 +218,12 @@ class SettingsWindow(QWidget):
                 json.dump(data, file, indent=4)
 
             self.chat.apply_theme(data["theme"])
+            self._refresh_key_placeholder()
 
-            self.status.setText(
-                "Settings saved successfully!"
-            )
+            if not self.status.text().startswith("Saved, but"):
+                self.status.setText(
+                    "Settings saved successfully!"
+                )
 
         except Exception as error:
 
