@@ -33,7 +33,13 @@ class AIWorker(QThread):
             self.error_occurred.emit(str(error) or error.__class__.__name__)
             return
         except Exception as error:
-            self.error_occurred.emit(f"Unexpected error: {error}")
+            text = str(error)
+            if "10061" in text or "refused" in text.lower():
+                text = (
+                    "Could not reach the AI service. Add your Gemini API key "
+                    "in Settings, or start Ollama for offline mode."
+                )
+            self.error_occurred.emit(text)
             return
 
         self.finished_response.emit("".join(pieces) or "No response received.")
