@@ -7,3 +7,4 @@ DEFAULT_PROVIDER = "gemini"          # "gemini" or "ollama"
 OLLAMA_MODEL = "llama3.2"
 CHAT_WINDOW_SIZE = (360, 460)
 MEMORY_MESSAGES = 10                 # how many past messages are sent to the AI
+BUBBLE_SIZE = 56

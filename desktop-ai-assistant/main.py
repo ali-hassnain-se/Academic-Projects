@@ -1,303 +1,145 @@
-import os
+"""Entry point of the Desktop AI Assistant.
+
+Wires everything together:
+  hotkey (system)  ->  capture selected text + active app (system)
+                   ->  chat window (ui)  ->  AI client (ai)
+"""
+import json
 import sys
 
-import pyperclip
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
-    QLineEdit, QPushButton, QLabel
-)
-from google import genai
+from PySide6.QtCore import QDir, QLockFile, QObject, QTimer
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QApplication
 
-# ==========================================
-# Settings
-# ==========================================
-# API key code mein MAT likhein. Terminal mein set karein:
-#   Windows (CMD):        set GEMINI_API_KEY=your_new_key
-#   Windows (PowerShell): $env:GEMINI_API_KEY="your_new_key"
-#   Linux / Mac:          export GEMINI_API_KEY=your_new_key
-API_KEY = os.environ.get("GEMINI_API_KEY", "")
-MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+from assistant import config
+from assistant.paths import resource_path, settings_file
+from assistant.system.capture import get_active_app, get_selected_text, take_screenshot
+from assistant.system.hotkey_manager import HotkeyManager
+from assistant.ui.bubble import Bubble
+from assistant.ui.chat_window import ChatWindow
+from assistant.ui.tray import SystemTray
+
+try:
+    from assistant.ai.prompts import pick_mode
+except ImportError:                                   # fallback if the helper does not exist
+    def pick_mode(app_name: str) -> str:
+        return {"vscode": "coding", "browser": "lecture"}.get(app_name, "general")
+
+MAX_SELECTED_CHARS = 4000
 
 
-# ==========================================
-# 1. Background Thread for Gemini API Request
-# ==========================================
-class AIWorkerThread(QThread):
-    response_ready = pyqtSignal(str)
+def load_hotkey() -> str:
+    """Hotkey saved in Settings ('Ctrl + Shift + Space' -> 'ctrl+shift+space')."""
+    try:
+        data = json.loads(settings_file().read_text(encoding="utf-8"))
+        text = data.get("hotkey")
+        if text:
+            return text.lower().replace(" ", "")
+    except Exception:
+        pass
+    return config.DEFAULT_HOTKEY
 
-    def __init__(self, prompt):
+
+class Controller(QObject):
+    """Connects the hotkey, the bubble and the chat window."""
+
+    def __init__(self, bubble, chat, hotkeys):
         super().__init__()
-        self.prompt = prompt
+        self.bubble = bubble
+        self.chat = chat
+        self.hotkeys = hotkeys
 
-    def run(self):
-        if not API_KEY:
-            self.response_ready.emit(
-                "Error: GEMINI_API_KEY set nahi hai.\n"
-                "Pehle environment variable set karein, phir program dobara chalayein."
-            )
+        bubble.double_clicked.connect(self.show_chat)
+        chat.screen_requested.connect(self.explain_screen)
+        hotkeys.triggered.connect(self.on_hotkey)
+
+    def show_chat(self):
+        self.chat.show()
+        self.chat.raise_()
+        self.chat.activateWindow()
+        self.chat.input_field.setFocus()
+
+    def on_hotkey(self):
+        """Runs on the main thread (the hotkey thread only sends a signal)."""
+        if self.chat.isVisible() and self.chat.isActiveWindow():
+            self.chat.hide()
             return
+
+        # Capture BEFORE our window opens, otherwise our window has the focus.
+        app_name = get_active_app()
+        selected = get_selected_text()
+
+        self.chat.context_mode = pick_mode(app_name)
+        self.show_chat()
+
+        if selected:
+            selected = selected[:MAX_SELECTED_CHARS]
+            text = f"Explain this:\n{selected}"
+            self.chat.submit(text, self.chat.context_mode)
+
+    def explain_screen(self):
+        # Hide our own windows first so they are not in the screenshot.
+        self.chat.hide()
+        self.bubble.hide()
+        QTimer.singleShot(300, self._capture_and_ask)
+
+    def _capture_and_ask(self):
+        png = None
+        error = ""
         try:
-            client = genai.Client(api_key=API_KEY)
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=(
-                    "Give a short, precise answer suitable for a small overlay "
-                    f"screen:\n{self.prompt}"
-                ),
+            png = take_screenshot()
+        except Exception as exc:
+            error = str(exc)
+
+        self.bubble.show()
+        self.show_chat()
+
+        if png:
+            self.chat.submit(
+                "Explain what is on my screen.",
+                "screen",
+                image=png,
             )
-            self.response_ready.emit(response.text or "(Khali jawab aaya)")
-        except Exception as e:
-            self.response_ready.emit(f"Error: {e}")
-
-
-# ==========================================
-# 2. Draggable round bubble button
-#    (click = chat kholo, drag = window hilao)
-# ==========================================
-class BubbleButton(QPushButton):
-    def __init__(self, text, parent=None):
-        super().__init__(text, parent)
-        self._press_pos = None
-        self._origin = None
-        self._moved = False
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._press_pos = event.globalPosition().toPoint()
-            self._origin = self.window().frameGeometry().topLeft()
-            self._moved = False
-            event.accept()
-
-    def mouseMoveEvent(self, event):
-        if self._press_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            delta = event.globalPosition().toPoint() - self._press_pos
-            if delta.manhattanLength() > 5:
-                self._moved = True
-            if self._moved:
-                self.window().move(self._origin + delta)
-            event.accept()
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and self._press_pos is not None:
-            if not self._moved:
-                self.clicked.emit()
-            self._press_pos = None
-            event.accept()
-
-
-# ==========================================
-# 3. Main Floating AI Overlay Widget UI
-# ==========================================
-class FloatingAIAssistant(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.is_expanded = False
-        self.worker = None
-        self.initUI()
-
-    def initUI(self):
-        self.setWindowFlags(
-            Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.Tool
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-
-        self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(10, 10, 10, 10)
-
-        # ---------------- Floating Bubble Button ----------------
-        self.bubble_btn = BubbleButton("AI", self)
-        self.bubble_btn.setFixedSize(50, 50)
-        self.bubble_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2563eb;
-                color: white;
-                border: none;
-                border-radius: 25px;
-                font-weight: bold;
-                font-size: 16px;
-            }
-            QPushButton:hover {
-                background-color: #1d4ed8;
-            }
-        """)
-        self.bubble_btn.clicked.connect(self.toggle_chat_window)
-        self.main_layout.addWidget(self.bubble_btn)
-
-        # ---------------- Chat Container Box ----------------
-        self.chat_container = QWidget(self)
-        self.chat_container.setObjectName("chatBox")
-        self.chat_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.chat_container.setStyleSheet("""
-            QWidget#chatBox {
-                background-color: #111827;
-                border-radius: 12px;
-            }
-        """)
-        self.chat_layout = QVBoxLayout(self.chat_container)
-        self.chat_layout.setContentsMargins(10, 10, 10, 10)
-        self.chat_layout.setSpacing(8)
-
-        # Header (title pe click karke drag kar sakte hain)
-        header_layout = QHBoxLayout()
-        title = QLabel("<b>AI Assistant</b>")
-        title.setStyleSheet("color: #f3f4f6; background: transparent;")
-
-        close_btn = QPushButton("X")
-        close_btn.setFixedSize(22, 22)
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet("""
-            QPushButton {
-                color: #9ca3af; background: transparent;
-                border: none; font-weight: bold;
-            }
-            QPushButton:hover { color: #ffffff; }
-        """)
-        close_btn.clicked.connect(self.toggle_chat_window)
-
-        header_layout.addWidget(title)
-        header_layout.addStretch()
-        header_layout.addWidget(close_btn)
-
-        # Response Display Box
-        self.response_box = QTextEdit()
-        self.response_box.setReadOnly(True)
-        self.response_box.setPlaceholderText("Answers will appear here...")
-        self.response_box.setStyleSheet("""
-            QTextEdit {
-                background-color: #1f2937;
-                color: #e5e7eb;
-                border: 1px solid #374151;
-                border-radius: 8px;
-                padding: 6px;
-            }
-        """)
-
-        # Input Prompt Field
-        self.input_field = QLineEdit()
-        self.input_field.setPlaceholderText("Ask anything, ya khali chhor kar Enter dabayen (clipboard use hoga)...")
-        self.input_field.setStyleSheet("""
-            QLineEdit {
-                background-color: #1f2937;
-                color: #ffffff;
-                border: 1px solid #374151;
-                border-radius: 6px;
-                padding: 8px;
-            }
-        """)
-        self.input_field.returnPressed.connect(self.send_query)
-
-        # Send Button
-        self.send_btn = QPushButton("Send")
-        self.send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.send_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #10b981;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #059669; }
-            QPushButton:disabled { background-color: #374151; color: #9ca3af; }
-        """)
-        self.send_btn.clicked.connect(self.send_query)
-
-        self.chat_layout.addLayout(header_layout)
-        self.chat_layout.addWidget(self.response_box)
-        self.chat_layout.addWidget(self.input_field)
-        self.chat_layout.addWidget(self.send_btn)
-
-        self.chat_container.setFixedSize(320, 380)
-        self.chat_container.hide()
-        self.main_layout.addWidget(self.chat_container)
-
-        # Screen ke top-right mein shuru karo
-        screen = QApplication.primaryScreen().availableGeometry()
-        self.adjustSize()
-        self.move(screen.right() - 100, screen.top() + 80)
-
-    # ---------------- Toggle Expanded Chat Window ----------------
-    def toggle_chat_window(self):
-        if self.is_expanded:
-            self.chat_container.hide()
-            self.bubble_btn.show()
-            self.is_expanded = False
         else:
-            self.bubble_btn.hide()
-            self.chat_container.show()
-            self.is_expanded = True
-            self.input_field.setFocus()
-
-        # Layout dobara hisaab lagaye, phir window ka size theek karo
-        self.layout().activate()
-        self.adjustSize()
-        self._keep_on_screen()
-
-    def _keep_on_screen(self):
-        screen = QApplication.primaryScreen().availableGeometry()
-        geo = self.frameGeometry()
-        x = min(max(geo.left(), screen.left()), screen.right() - geo.width())
-        y = min(max(geo.top(), screen.top()), screen.bottom() - geo.height())
-        self.move(x, y)
-
-    # ---------------- Window Dragging (title/khali jagah se) ----------------
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.drag_position = (
-                event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-            )
-            event.accept()
-
-    def mouseMoveEvent(self, event):
-        if event.buttons() & Qt.MouseButton.LeftButton and hasattr(self, "drag_position"):
-            self.move(event.globalPosition().toPoint() - self.drag_position)
-            event.accept()
-
-    def mouseReleaseEvent(self, event):
-        if hasattr(self, "drag_position"):
-            del self.drag_position
-
-    # ---------------- Send Query ----------------
-    def send_query(self):
-        if self.worker is not None and self.worker.isRunning():
-            return
-
-        user_text = self.input_field.text().strip()
-
-        # Input khali ho to clipboard se text lo
-        if not user_text:
-            try:
-                copied_text = pyperclip.paste().strip()
-            except Exception:
-                copied_text = ""
-            if not copied_text:
-                return
-            self.input_field.setText(copied_text)
-            prompt = f"Explain this:\n{copied_text}"
-        else:
-            prompt = user_text
-
-        self.response_box.setPlainText("Thinking...")
-        self.send_btn.setEnabled(False)
-
-        self.worker = AIWorkerThread(prompt)
-        self.worker.response_ready.connect(self.handle_response)
-        self.worker.finished.connect(lambda: self.send_btn.setEnabled(True))
-        self.worker.start()
-
-    def handle_response(self, text):
-        self.response_box.setPlainText(text)
+            self.chat.add_message(f"Could not take a screenshot: {error}", is_user=False)
 
 
-# ==========================================
-# 4. Entry Point
-# ==========================================
-if __name__ == "__main__":
+def main():
     app = QApplication(sys.argv)
-    assistant = FloatingAIAssistant()
-    assistant.show()
-    sys.exit(app.exec())
+    app.setApplicationName(config.APP_NAME)
+    app.setQuitOnLastWindowClosed(False)          # keep running in the tray
+
+    # Only one copy of the assistant at a time (e.g. auto-start + manual start).
+    lock = QLockFile(QDir.tempPath() + "/DesktopAIAssistant.lock")
+    if not lock.tryLock(100):
+        print("Desktop AI Assistant is already running.")
+        return 0
+
+    icon = QIcon(resource_path("assets/icon.ico"))
+    if not icon.isNull():
+        app.setWindowIcon(icon)
+
+    hotkeys = HotkeyManager()
+    chat = ChatWindow(hotkeys)
+    bubble = Bubble()
+
+    screen = app.primaryScreen().availableGeometry()
+    bubble.move(screen.right() - config.BUBBLE_SIZE - 20, screen.top() + 120)
+    bubble.show()
+
+    tray = SystemTray(chat, chat.settings_window)
+    controller = Controller(bubble, chat, hotkeys)
+
+    if not hotkeys.register(load_hotkey()):
+        print("Could not register the hotkey. Use the bubble or the tray icon.")
+    app.aboutToQuit.connect(hotkeys.stop)
+
+    code = app.exec()
+    lock.unlock()
+    # keep references alive until the end
+    del tray, controller
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
