@@ -5,6 +5,8 @@ from PySide6.QtWidgets import (
     QScrollArea, QFrame
 )
 
+from assistant.storage import history
+from assistant.ui.history_panel import HistoryPanel
 from assistant.ui.settings_window import SettingsWindow
 from assistant.ui.workers import AIWorker
 
@@ -27,6 +29,7 @@ class MessageBubble(QFrame):
         layout.setContentsMargins(5, 5, 5, 5)
 
         self.label = QLabel(text)
+        self.label.setTextFormat(Qt.TextFormat.PlainText)   # show text exactly as it is
         self.label.setWordWrap(True)
         self.label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
@@ -70,10 +73,11 @@ class ChatWindow(QWidget):
         self.worker = None
         self.current_reply = None       # bubble that is being streamed
         self.reply_text = ""
+        self.chat_id = None             # id of the chat saved in the history database
 
         self.setWindowTitle("AI Assistant")
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        self.resize(380, 520)
+        self.resize(430, 520)
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 10, 10, 10)
@@ -86,17 +90,21 @@ class ChatWindow(QWidget):
         self.screen_btn = QPushButton("Explain screen")
         self.screen_btn.clicked.connect(lambda: self.screen_requested.emit())
 
+        self.history_btn = QPushButton("History")
+        self.history_btn.clicked.connect(self.open_history)
+
         self.settings_btn = QPushButton("Settings")
         self.settings_btn.clicked.connect(self.open_settings)
 
-        self.clear_btn = QPushButton("Clear")
-        self.clear_btn.clicked.connect(self.clear_chat)
+        self.new_btn = QPushButton("New chat")
+        self.new_btn.clicked.connect(self.new_chat)
 
         header_layout.addWidget(self.title_lbl)
         header_layout.addStretch()
         header_layout.addWidget(self.screen_btn)
+        header_layout.addWidget(self.history_btn)
         header_layout.addWidget(self.settings_btn)
-        header_layout.addWidget(self.clear_btn)
+        header_layout.addWidget(self.new_btn)
 
         main_layout.addLayout(header_layout)
 
@@ -151,6 +159,11 @@ class ChatWindow(QWidget):
 
         self.apply_theme("Dark")
 
+        # History window (list of saved chats)
+        self.history_panel = HistoryPanel()
+        self.history_panel.conversation_selected.connect(self.load_chat)
+        self.history_panel.conversation_deleted.connect(self._on_chat_deleted)
+
         # Created last: it calls apply_theme() while loading its settings.
         self.settings_window = SettingsWindow(self, hotkey_manager)
 
@@ -164,15 +177,14 @@ class ChatWindow(QWidget):
             f"color: {c['title']}; font-weight: bold; font-size: 14px;"
         )
 
-        for button, hover in (
-            (self.screen_btn, c["title"]),
-            (self.settings_btn, c["title"]),
-            (self.clear_btn, "#FF5555"),
+        for button in (
+            self.screen_btn, self.history_btn,
+            self.settings_btn, self.new_btn,
         ):
             button.setStyleSheet(
                 "QPushButton { background-color: transparent; "
                 f"color: {c['muted']}; border: none; font-size: 12px; }} "
-                f"QPushButton:hover {{ color: {hover}; }}"
+                f"QPushButton:hover {{ color: {c['title']}; }}"
             )
 
         self.typing_label.setStyleSheet(
@@ -216,6 +228,7 @@ class ChatWindow(QWidget):
             return
 
         self.add_message(prompt, is_user=True)
+        self._save("user", prompt)
         self.show_typing(True)
         self.send_btn.setEnabled(False)
         self.current_reply = None
@@ -244,6 +257,7 @@ class ChatWindow(QWidget):
         if self.current_reply is None:
             self.add_message(full_text, is_user=False)
 
+        self._save("model", full_text)
         self.show_typing(False)
         self.current_reply = None
 
@@ -263,10 +277,18 @@ class ChatWindow(QWidget):
         else:
             self.typing_label.hide()
 
-    def clear_chat(self):
+    # ---------------- History ----------------
+    def _save(self, role, text):
+        """Save one message in the history database (never breaks the chat)."""
+        try:
+            if self.chat_id is None:
+                title = " ".join(text.split())[:40] or "New chat"
+                self.chat_id = history.create_chat(title)
+            history.add_message(self.chat_id, role, text)
+        except Exception as error:
+            print("History error:", error)
 
-        if self.worker is not None and self.worker.isRunning():
-            return
+    def _clear_messages(self):
 
         while self.chat_layout.count():
             item = self.chat_layout.takeAt(0)
@@ -277,6 +299,52 @@ class ChatWindow(QWidget):
 
         self.current_reply = None
         self.show_typing(False)
+
+    def new_chat(self):
+        """Empty the window and start a new chat (old chats stay in History)."""
+
+        if self.worker is not None and self.worker.isRunning():
+            return
+
+        self._clear_messages()
+        self.chat_id = None
+
+    def clear_chat(self):
+        self.new_chat()
+
+    def load_chat(self, chat_id):
+        """Open a saved chat from the history window."""
+
+        if self.worker is not None and self.worker.isRunning():
+            return
+
+        try:
+            messages = history.get_messages(chat_id)
+        except Exception as error:
+            self.add_message(f"Error: could not load the chat ({error})", is_user=False)
+            return
+
+        self._clear_messages()
+        self.chat_id = chat_id
+
+        for message in messages:
+            self.add_message(message["content"], message["role"] == "user")
+
+        self.history_panel.hide()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _on_chat_deleted(self, chat_id):
+        if chat_id == self.chat_id:
+            self.new_chat()
+
+    def open_history(self):
+
+        self.history_panel.refresh_history()
+        self.history_panel.show()
+        self.history_panel.raise_()
+        self.history_panel.activateWindow()
 
     def open_settings(self):
 

@@ -1,25 +1,24 @@
-
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QListWidget, QListWidgetItem,
     QPushButton, QMessageBox
 )
-from PySide6.QtCore import Signal, Qt
 
-from assistant.chat_history import ChatHistory
+from assistant.storage import history
 
 
 class HistoryPanel(QWidget):
+    """List of saved chats (reads them from Member B's SQLite history)."""
 
-    conversation_selected = Signal(str)
-    conversation_deleted = Signal(str)
+    conversation_selected = Signal(int)     # chat id to open
+    conversation_deleted = Signal(int)      # chat id that was deleted
 
-    def __init__(self, history=None):
+    def __init__(self):
         super().__init__()
 
-        self.history = history or ChatHistory()
-
         self.setWindowTitle("AI Assistant - Chat History")
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self.resize(420, 550)
 
         self.setStyleSheet("""
@@ -69,6 +68,9 @@ class HistoryPanel(QWidget):
 
         self.history_list = QListWidget()
 
+        self.empty_label = QLabel("No saved chats yet.")
+        self.empty_label.setStyleSheet("color: #9ca3af; padding: 6px;")
+
         button_layout = QHBoxLayout()
 
         open_button = QPushButton("Open Chat")
@@ -79,6 +81,7 @@ class HistoryPanel(QWidget):
 
         layout.addWidget(title)
         layout.addWidget(self.history_list)
+        layout.addWidget(self.empty_label)
         layout.addLayout(button_layout)
 
         open_button.clicked.connect(self.open_chat)
@@ -94,16 +97,20 @@ class HistoryPanel(QWidget):
 
         self.history_list.clear()
 
-        conversations = self.history.get_all_conversations()
+        try:
+            chats = history.list_chats()          # newest first
+        except Exception as error:
+            print("History error:", error)
+            chats = []
 
-        for chat_id, chat in reversed(list(conversations.items())):
-
-            title = chat.get("title", "New Conversation")
-
-            item = QListWidgetItem(title)
-            item.setData(Qt.ItemDataRole.UserRole, chat_id)
-
+        for chat in chats:
+            item = QListWidgetItem(chat["title"] or "New chat")
+            item.setData(Qt.ItemDataRole.UserRole, chat["id"])
+            created = str(chat.get("created_at", ""))[:16].replace("T", " ")
+            item.setToolTip(f"{created} (UTC)")
             self.history_list.addItem(item)
+
+        self.empty_label.setVisible(not chats)
 
     def open_chat(self):
 
@@ -113,9 +120,7 @@ class HistoryPanel(QWidget):
             return
 
         chat_id = item.data(Qt.ItemDataRole.UserRole)
-
-        if self.history.open_chat(chat_id):
-            self.conversation_selected.emit(chat_id)
+        self.conversation_selected.emit(int(chat_id))
 
     def delete_chat(self):
 
@@ -135,6 +140,11 @@ class HistoryPanel(QWidget):
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
-        if self.history.delete_chat(chat_id):
-            self.conversation_deleted.emit(chat_id)
-            self.refresh_history()
+        try:
+            history.delete_chat(int(chat_id))
+        except Exception as error:
+            print("History error:", error)
+            return
+
+        self.conversation_deleted.emit(int(chat_id))
+        self.refresh_history()
