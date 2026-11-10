@@ -9,11 +9,32 @@ import time
 # ---------------------------------------------------------------
 # 1. Selected text
 # ---------------------------------------------------------------
+def _wait_for_keys_released(timeout: float = 1.0) -> None:
+    """Wait until Shift / Ctrl / Alt / Space are physically released.
+
+    The hotkey fires while the user is still holding its keys. Sending Ctrl+C
+    at that moment often fails, so we wait for the user to let go first."""
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+    except Exception:
+        time.sleep(0.2)
+        return
+
+    keys = (0x10, 0x11, 0x12, 0x20)         # Shift, Ctrl, Alt, Space
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in keys):
+            return
+        time.sleep(0.02)
+
+
 def get_selected_text() -> str:
     """Return the text currently selected in any app ('' if nothing is selected).
 
     Trick: put a marker on the clipboard, simulate Ctrl+C, and see if it changed.
-    The user's original clipboard is always restored."""
+    The user's original clipboard text is restored afterwards."""
     import pyperclip
     from pynput.keyboard import Controller, Key
 
@@ -23,28 +44,42 @@ def get_selected_text() -> str:
     except Exception:
         original = ""
 
-    marker = f"__DAI_MARKER_{time.time_ns()}__"
-    text = marker
+    result = ""
     try:
-        pyperclip.copy(marker)
-        # Hotkey keys may still be held down; release them so we send a clean Ctrl+C
-        for k in (Key.shift, Key.alt):
+        _wait_for_keys_released()
+        for k in (Key.shift, Key.alt):      # in case a key is still logically down
             kb.release(k)
-        time.sleep(0.15)
-        with kb.pressed(Key.ctrl):
-            kb.press("c")
-            kb.release("c")
-        time.sleep(0.2)
-        text = pyperclip.paste()
+
+        for _attempt in range(2):
+            marker = f"__DAI_MARKER_{time.time_ns()}__"
+            pyperclip.copy(marker)
+            time.sleep(0.05)
+
+            with kb.pressed(Key.ctrl):
+                kb.press("c")
+                kb.release("c")
+
+            # Wait up to ~0.6 s for the app to put the selection on the clipboard.
+            text = marker
+            deadline = time.time() + 0.6
+            while time.time() < deadline:
+                time.sleep(0.05)
+                text = pyperclip.paste()
+                if text != marker:
+                    break
+
+            if text != marker:
+                result = text.strip()
+                break
     except Exception:
-        text = marker
+        result = ""
     finally:
         try:
             pyperclip.copy(original)
         except Exception:
             pass
 
-    return "" if text == marker else text.strip()
+    return result
 
 
 # ---------------------------------------------------------------
