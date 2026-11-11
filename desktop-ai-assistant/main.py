@@ -69,8 +69,6 @@ class Controller(QObject):
         app_name = get_active_app()
         selected = get_selected_text()
 
-        print("DEBUG app:", app_name, "| selected chars:", len(selected))
-
         self.chat.context_mode = pick_mode(app_name)
         self.show_chat()
 
