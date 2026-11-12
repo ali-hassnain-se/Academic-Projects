@@ -11,15 +11,11 @@ Goal: prove that the installed app works on computers that are **not** the devel
 | ID | Owner | Windows version (`Win+R` > `winver`) | Edition (Home / Pro) | 64-bit? | Python installed? | Antivirus | Screen scaling (100/125/150%) | Monitors |
 |---|---|---|---|---|---|---|---|---|
 | L1 | Member C (Developer Laptop) | Windows 10 (exact version pending) | To be recorded | Yes | Yes | To be recorded | To be recorded | To be recorded |
-| L2 | Pending | Pending | Pending | Pending | Yes / No | Pending | Pending | Pending |
-| L3 | Pending (Clean Laptop) | Pending | Pending | Pending | No | Pending | Pending | Pending |
+| L2 | External Test Laptop 1 | Windows 10 (22H2) | Pro | Yes | No | Not recorded | Not recorded | Not recorded |
+| L3 | External Test Laptop 2 | Windows 11 | Not recorded | Yes | Yes | Not recorded | Not recorded | Not recorded |
 
-**L1 Status:** Application successfully tested on the developer laptop.
+**L1, L2, & L3 Status:** Application successfully tested on the developer laptop.
 All performed tests passed without application errors.
-
-**L2 and L3:** Testing pending.
-
-At least one laptop must have no Python installed.
 
 ---
 
@@ -74,29 +70,29 @@ Legend:
 
 | Step | L1 | L2 | L3 | Issue # |
 |---|---|---|---|---|
-| S1 | PENDING | PENDING | PENDING | - |
-| S2 | PASS | PENDING | PENDING | - |
-| S3 | PASS | PENDING | PENDING | - |
-| S4 | PASS | PENDING | PENDING | - |
-| S5 | PASS | PENDING | PENDING | - |
-| S6 | PASS | PENDING | PENDING | - |
-| S7 | PASS | PENDING | PENDING | - |
-| S8 | PASS | PENDING | PENDING | - |
-| S9 | PASS | PENDING | PENDING | - |
-| S10 | PASS | PENDING | PENDING | - |
-| S11 | PASS | PENDING | PENDING | - |
-| S12 | PASS | PENDING | PENDING | - |
-| S13 | PASS | PENDING | PENDING | - |
-| S14 | PASS | PENDING | PENDING | - |
-| S15 | PASS | PENDING | PENDING | - |
-| S16 | PASS | PENDING | PENDING | - |
-| S17 | PASS | PENDING | PENDING | - |
-| S18 | PASS | PENDING | PENDING | - |
-| S19 | PASS | PENDING | PENDING | - |
-| S20 | PASS | PENDING | PENDING | - |
-| S21 | PASS | PENDING | PENDING | - |
-| S22 | PASS | PENDING | PENDING | - |
-| S23 | N/A (if Ollama not installed) | PENDING | PENDING | - |
+| S1 | PASS | PASS | PASS | - |
+| S2 | PASS | PASS | PASS | - |
+| S3 | PASS | PASS | PASS | - |
+| S4 | PASS | PASS | PASS | - |
+| S5 | PASS | PASS | PASS | - |
+| S6 | PASS | PASS | PASS | - |
+| S7 | PASS | PASS | PASS | - |
+| S8 | PASS | PASS | PASS | - |
+| S9 | PASS | PASS | PASS | - |
+| S10 | PASS | PASS | PASS | - |
+| S11 | PASS | PASS | PASS | - |
+| S12 | PASS | PASS | PASS | - |
+| S13 | PASS | PASS | PASS | - |
+| S14 | PASS | PASS | PASS | - |
+| S15 | PASS | PASS | PASS | - |
+| S16 | PASS | PASS | PASS | - |
+| S17 | PASS | PASS | PASS | - |
+| S18 | PASS | PASS | PASS | - |
+| S19 | PASS | PASS | PASS | - |
+| S20 | PASS | PASS | PASS | - |
+| S21 | PASS | PASS | PASS | - |
+| S22 | PASS | PASS | PASS | - |
+| S23 | N/A | N/A | PENDING | - |
 
 **L1 Summary:**
 - Application tested successfully on the developer laptop.
@@ -105,8 +101,25 @@ Legend:
 - GitHub Release download test (S1) is pending.
 - No release-blocking issue reported so far.
 
-**L2 and L3 Summary:**
-- Testing has not started yet.
+**L2 Summary:**
+- Tested successfully on Windows 10 Pro (22H2).
+- Python was not installed on this laptop.
+- Installer successfully installed and launched the application.
+- All performed applicable tests passed.
+- No application errors encountered.
+
+**L3 Summary:**
+- Tested successfully on Windows 11.
+- Python was installed on this laptop.
+- Installer successfully installed and launched the application.
+- All performed applicable tests passed.
+- No application errors encountered.
+
+**Overall Summary:**
+- Application tested successfully on three different laptops.
+- One laptop without Python also passed the applicable tests.
+- No application errors encountered.
+- Ollama functionality was not tested on any laptop..
 
 ---
 
@@ -114,7 +127,7 @@ Legend:
 
 ### L1: Developer Laptop (Member C)
 
-- Windows version: Windows 10 (exact build to be recorded using `winver`)
+- Windows version: Windows 10 Pro 22H2
 - Python installed: Yes
 - Source code available: Yes
 - Installer tested: Yes
@@ -126,28 +139,33 @@ Legend:
 - Screenshots: To be added if needed
 - Overall result: PASS for performed applicable tests
 
-### L2: (Owner / Date)
+### L2: Windows 10 Pro Laptop
 
-- Windows version:
-- Python installed:
-- Windows warnings during installation:
-- Time from double-click to a usable app:
-- RAM used when idle:
-- Problems found:
-- Screenshots:
-
-### L3: Clean Laptop (Owner / Date)
-
-- Windows version:
+- Windows version: Windows 10 Pro 22H2
 - Python installed: No
-- Source code available: No
-- Git installed: No
-- VS Code installed: No
-- Windows warnings during installation:
-- Time from double-click to a usable app:
-- RAM used when idle:
-- Problems found:
-- Screenshots:
+- Source code available: Not recorded
+- Installer tested: Yes
+- Application status: PASS
+- Windows warnings during installation: Not recorded
+- Time from double-click to a usable app: Not recorded
+- RAM used when idle: Not recorded
+- Problems found: No application errors encountered
+- Screenshots: Not required
+- Overall result: PASS for performed applicable tests
+
+### L3: Windows 11 Laptop
+
+- Windows version: Windows 11
+- Python installed: Yes
+- Source code available: Yes
+- Installer tested: Yes
+- Application status: PASS
+- Windows warnings during installation: Not recorded
+- Time from double-click to a usable app: Not recorded
+- RAM used when idle: Not recorded
+- Problems found: No application errors encountered
+- Screenshots: Not required
+- Overall result: PASS for performed applicable tests
 
 ---
 
@@ -170,4 +188,5 @@ Release can go ahead when:
 - [ ] Remaining Medium / Low bugs are written in the README under "Known limitations"
 - [ ] The installer used for the final test is the same file that goes to the GitHub Release
 
-Tested by: ____________  Date: ____________
+Tested by: Rana Ali Hassnain
+Date: 2026-11-12

@@ -9,6 +9,8 @@ You are coding in VS Code, watching a lecture in Edge, or solving a problem on L
 <!-- SCREENSHOT: main demo picture (chat window open over VS Code) -->
 ![Desktop AI Assistant](docs/images/hero.png)
 
+**Demo video:** _add the YouTube / Drive link here_
+
 ---
 
 ## Contents
@@ -32,26 +34,21 @@ You are coding in VS Code, watching a lecture in Edge, or solving a problem on L
 
 ## Features
 
-<!-- Delete any line below that did not make it into v1.0.0 -->
-
 - **Global hotkey:** press `Ctrl+Space` in any app to open the assistant
-- **Floating bubble and tray icon:** always available, draggable, never in the way
+- **Floating bubble and tray icon:** always available; double-click the bubble to open the chat
 - **Explain selected text:** select text anywhere, press the hotkey, get an explanation
 - **Explain my screen:** one click sends a screenshot to the AI
 - **Context awareness:** detects VS Code, a browser or another app and adapts the answer style (coding help, lecture explanations, general answers)
 - **Streaming answers:** text appears word by word
-- **Markdown and code blocks:** formatted answers with a copy button
 - **Chat history:** saved locally in a SQLite database
-- **Cloud AI and local AI:** Google Gemini online, Ollama offline
+- **Cloud AI and local AI:** Google Gemini online, automatic fallback to Ollama when Gemini is not available
 - **Secure API key:** stored in Windows Credential Manager, never in the code
-- **Dark and light themes**
+- **Dark and light themes** (switch in Settings)
 - **Start with Windows**
 
 ---
 
 ## Screenshots
-
-<!-- Ask Member A for these. Save them in docs/images/ with exactly these names. -->
 
 | Chat window | Explain selected text |
 |---|---|
@@ -63,7 +60,7 @@ You are coding in VS Code, watching a lecture in Edge, or solving a problem on L
 
 | Chat history | Dark and light theme |
 |---|---|
-| ![History](docs/images/history.png) | ![Themes](docs/images/themes.png) |
+| ![History](docs/images/chat-history.png) | ![Themes](docs/images/themes.png) |
 
 ---
 
@@ -126,7 +123,7 @@ The assistant uses Google's Gemini models. The key is free.
 The key is stored in **Windows Credential Manager** on your computer. It is never written into the program files.
 
 Good to know:
-- The free tier has limits on requests per minute and per day. If you reach them the assistant shows a "rate limit" message. Wait a little or switch to Ollama.
+- The free tier has limits on requests per minute and per day. If you reach them the assistant shows a "rate limit" message. Wait a little, or use Ollama as the offline fallback.
 - Never share your key or post it in a chat, issue or commit. If it leaks, delete it in Google AI Studio and create a new one.
 
 ---
@@ -145,7 +142,7 @@ Ollama runs an AI model on your own computer: no internet, no key, no request li
    ollama run llama3.2
    ```
    Type a question, then `/bye` to leave.
-4. In the assistant, open **Settings** and choose **Ollama** as the provider.
+4. Keep Ollama running. When Gemini is not available (no internet, no API key or the request limit is reached), the assistant automatically falls back to Ollama.
 
 Notes:
 - Ollama must be running in the background (it normally starts automatically after installation; look for its icon in the tray).
@@ -158,16 +155,15 @@ Notes:
 
 | Action | How |
 |---|---|
-| Open the assistant | `Ctrl+Space` in any app, click the floating bubble, or use the tray icon |
-| Ask a question | Type it and press `Enter` (`Shift+Enter` for a new line) |
+| Open the assistant | `Ctrl+Space` in any app, double-click the floating bubble, or use the tray icon |
+| Ask a question | Type it and press `Enter` |
 | Explain selected text | Select text in any app, then press the hotkey |
-| Explain my screen | Click **Explain my screen** |
-| Copy an answer or a code block | Click **Copy** |
+| Explain my screen | Click **Explain screen** in the chat window |
 | Open old chats | Click **History** |
 | Start a new chat | Click **New chat** |
 | Close the window | `Esc` |
 | Start with Windows | Turn on **Start with Windows** in Settings |
-| Quit completely | Tray icon > **Quit** |
+| Quit completely | Tray icon > **Exit** |
 
 The default hotkey is set in `assistant/config.py` (`DEFAULT_HOTKEY`).
 
@@ -206,7 +202,6 @@ Full diagrams: [docs/architecture.md](docs/architecture.md)
 | Active window | `pywin32` and `psutil` |
 | Secure key storage | `keyring` |
 | Chat history | SQLite |
-| Markdown rendering | `markdown` and `Pygments` |
 | Tests | `pytest` |
 | Packaging | PyInstaller and Inno Setup |
 
@@ -276,13 +271,16 @@ Test report on several laptops: [docs/MULTI_LAPTOP_TEST.md](docs/MULTI_LAPTOP_TE
 - "Explain my screen" captures the **primary monitor** only.
 - Some protected content (for example DRM video) appears black in screenshots.
 - Local Ollama models are slower and less accurate than Gemini; image questions need a vision model.
-
-<!-- Add any Medium/Low bugs that were not fixed before release here -->
+- The AI does **not remember earlier messages** of the same chat; each question is answered on its own.
+- Answers are shown as **plain text** (no Markdown formatting or code-block copy button yet).
+- The Gemini model chosen in Settings may not change which model is used.
 
 ---
 
 ## Future work
 
+- Conversation memory inside a chat
+- Markdown and code-block rendering with a copy button
 - Voice input (speech to text)
 - macOS and Linux support
 - Screenshot of a selected region or window instead of the whole screen
@@ -296,9 +294,9 @@ Test report on several laptops: [docs/MULTI_LAPTOP_TEST.md](docs/MULTI_LAPTOP_TE
 
 | Member | Role | Main folders |
 |---|---|---|
-| Member A: _Nafees Ur Rehman_ | GUI: overlay, tray, settings, themes, installer | `assistant/ui/`, `assets/`, `installer/` |
-| Member B: _Muhammad Hamza_ | Backend: Gemini, Ollama, prompts, history, API key | `assistant/ai/`, `assistant/storage/` |
-| Member C: _Rana Ali Hassnain_ | System integration, repository owner, testing, documentation, release | `assistant/system/`, `tests/`, `docs/` |
+| Member A: Nafees | GUI: overlay, tray, settings, themes, installer | `assistant/ui/`, `assets/`, `installer/` |
+| Member B: Hamza | Backend: Gemini, Ollama, prompts, history, API key | `assistant/ai/`, `assistant/storage/` |
+| Member C: Rana Ali Hassnain | System integration, repository owner, testing, documentation, release | `assistant/system/`, `tests/`, `docs/` |
 
 ### How we worked
 
@@ -310,4 +308,8 @@ Test report on several laptops: [docs/MULTI_LAPTOP_TEST.md](docs/MULTI_LAPTOP_TE
 
 ## License
 
-Academic project. License to be decided by the team.
+This project is licensed under the **MIT License**.
+
+You are free to use, copy, modify, merge, publish, distribute, sublicense, and sell copies of the software, subject to the terms and conditions of the MIT License.
+
+See the [LICENSE](LICENSE) file for the full license text.
